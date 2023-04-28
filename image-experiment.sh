@@ -75,11 +75,13 @@ function image_until_good {
     until [[ $is_good == "y" ]];
     do
         local fpath="${filepath_prefix}-img-${img_idx}.jpg"
-        echo "take image"
+
+        echo "taking image '$fpath'"
         # libcamera-still \
         #     --nopreview \
-        #     --camera $cam_id \
+        #     --camera "$cam_id" \
         #     --output "$fpath"
+
         ((img_idx = img_idx + 1))
         get_y_or_n_answer "Is '${fpath}' good enough?"
         is_good=$answer
@@ -102,6 +104,9 @@ function main {
         local i
         for i in `seq 1 $nframes`;
         do
+            printf "Press enter when frame ${i} is in place for imaging."
+            read
+
             local preprefix="${experiment}-${nuc}-frame-${i}"
             image_until_good 0 "${preprefix}-cam-0"
             image_until_good 1 "${preprefix}-cam-1"
