@@ -12,57 +12,25 @@ set -o nounset
 set -o pipefail
 
 
-function get_y_or_n_answer {
+function zenity_alphanumeric_entry {
     local prompt=$1
 
-    answer=""
-    local ntries=0
-    until [[ "$answer" == "y" || "$answer" == "n" ]]
-    do
-        if [[ $ntries -gt 0 ]]
-        then
-            printf "Answer 'y' or 'n'\n"
-        fi
-        printf "${prompt} [y/n] "
-        read answer
-        ((ntries = ntries + 1))
-    done
-}
-
-
-function get_alphanumeric_answer {
-    local prompt=$1
-
-    answer=""
+    local extra_prompt="(alphanumeric characters only --- no spaces and no emojis)"
+    local final_prompt=""
+    local answer=""
     local ntries=0
     until [[ "$answer" =~ ^[[:alnum:]]+$ ]]
     do
-        if [[ $ntries -gt 0 ]]
+        if [[ $ntries -eq 0 ]]
         then
-            printf "Alphanumeric characters only (no spaces and no emojis)\n"
+            final_prompt="$prompt"
+        else
+            final_prompt="$prompt $extra_prompt"
         fi
-        printf "$prompt"
-        read answer
+        answer=`zenity --entry --text "$final_prompt"` || true
         ((ntries = ntries + 1))
     done
-}
-
-
-function get_positive_integer_answer {
-    local prompt=$1
-
-    answer=""
-    local ntries=0
-    until [[ "$answer" -gt 0 ]]
-    do
-        if [[ $ntries -gt 0 ]]
-        then
-            printf "Enter a positive integer\n"
-        fi
-        printf "$prompt"
-        read answer
-        ((ntries = ntries + 1))
-    done
+    printf "$answer"
 }
 
 
@@ -70,9 +38,9 @@ function image_until_good {
     local cam_id=$1
     local filepath_prefix=$2
 
-    local is_good="n"
+    local is_good="no"
     local img_idx=0
-    until [[ $is_good == "y" ]];
+    until [[ $is_good == "yes" ]];
     do
         local fpath="${filepath_prefix}-img-${img_idx}.jpg"
 
@@ -81,42 +49,75 @@ function image_until_good {
         #     --nopreview \
         #     --camera "$cam_id" \
         #     --output "$fpath"
+        # gm convert -resize 700x \
+        #            "/srv/images/$fpath" \
+        #            "/srv/resized-images/resized-$fpath"
+        # gpicview "/srv/resized-images/resized-$fpath"
 
         ((img_idx = img_idx + 1))
-        get_y_or_n_answer "Is '${fpath}' good enough?"
-        is_good=$answer
+        zenity --question \
+               --title "Image check" \
+               --no-wrap \
+               --text "Was '${fpath}' good enough?" \
+            && is_good="yes"
     done
 }
 
 
 function main {
-    get_alphanumeric_answer "Experiment name: "
-    local experiment=$answer
+    local imager_ssh_destination=$1
+
+    if ! ssh -o PasswordAuthentication=no "$imager_ssh_destination" exit ;
+    then
+        zenity --error --modal \
+               --title "No alternative to password" \
+               --no-wrap \
+               --text "SSH keys not configured.  Exiting to avoid pain."
+        exit 1
+    fi
+
+    local experiment=`zenity_alphanumeric_entry "Enter experiment name"`
 
     while :
     do
-        get_alphanumeric_answer "NUC: "
-        local nuc=$answer
+        local nuc=`zenity_alphanumeric_entry "Enter NUC"`
 
-        get_positive_integer_answer "Number of frames: "
-        local nframes=$answer
+        local nframes=""
+        while [[ -z "$nframes" ]];
+        do
+            ## Abuse the question dialog to ensure we get back a
+            ## positive integer.  `--switch` removes the OK/cancel
+            ## options.
+            nframes=`zenity --question --text "Number of frames:" \
+                         --switch \
+                         --extra-button "1" \
+                         --extra-button "2" \
+                         --extra-button "3" \
+                         --extra-button "4" \
+                         --extra-button "5" \
+                         --extra-button "6"` || true
+        done
 
         local i
         for i in `seq 1 $nframes`;
         do
-            printf "Press enter when frame ${i} is in place for imaging."
-            read
+            ## Continue even if the window is closed instead of "OK"
+            zenity --info --modal \
+                   --title "Waiting for frame" \
+                   --ok-label "Ready" \
+                   --no-wrap \
+                   --text "Press 'Ready' when Frame #${i} is in place." \
+                || true
 
             local preprefix="${experiment}-${nuc}-frame-${i}"
-            image_until_good 0 "${preprefix}-cam-0"
-            image_until_good 1 "${preprefix}-cam-1"
+            image_until_good 0 "${prefix}-cam-0"
+            image_until_good 1 "${prefix}-cam-1"
         done
 
-        get_y_or_n_answer "More?"
-        if [[ "$answer" == "n" ]];
-        then
-            break
-        fi
+        zenity --question --modal \
+               --no-wrap \
+               --text "Another nuc?" \
+            || break
     done
 }
 
