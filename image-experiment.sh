@@ -35,30 +35,33 @@ function zenity_alphanumeric_entry {
 
 
 function image_until_good {
-    local cam_id=$1
-    local filepath_prefix=$2
+    local imager_ssh_destination=$1
+    local cam_id=$2
+    local fname_prefix=$3
 
     local is_good="no"
     local img_idx=0
     until [[ $is_good == "yes" ]];
     do
-        local fpath="${filepath_prefix}-img-${img_idx}.jpg"
+        local fname="${fname_prefix}-img-${img_idx}.jpg"
 
-        echo "taking image '$fpath'"
-        # libcamera-still \
-        #     --nopreview \
-        #     --camera "$cam_id" \
-        #     --output "$fpath"
-        # gm convert -resize 700x \
-        #            "/srv/images/$fpath" \
-        #            "/srv/resized-images/resized-$fpath"
-        # gpicview "/srv/resized-images/resized-$fpath"
+        echo "Acquiring '$fname'"
+        ssh -o PasswordAuthentication=no "$imager_ssh_destination" \
+            libcamera-still \
+            --nopreview \
+            --camera "$cam_id" \
+            --output "/srv/images/$fname"
+        echo "Resizing '$fname'"
+        gm convert -resize 700x \
+           "/srv/images/$fname" \
+           "/srv/resized-images/resized-$fname"
+        gpicview "/srv/resized-images/resized-$fname"
 
         ((img_idx = img_idx + 1))
         zenity --question \
                --title "Image check" \
                --no-wrap \
-               --text "Was '${fpath}' good enough?" \
+               --text "Was '${fname}' good enough?" \
             && is_good="yes"
     done
 }
@@ -109,9 +112,9 @@ function main {
                    --text "Press 'Ready' when Frame #${i} is in place." \
                 || true
 
-            local preprefix="${experiment}-${nuc}-frame-${i}"
-            image_until_good 0 "${prefix}-cam-0"
-            image_until_good 1 "${prefix}-cam-1"
+            local prefix="${experiment}-${nuc}-frame-${i}"
+            image_until_good "$imager_ssh_destination" 0 "${prefix}-cam-0"
+            image_until_good "$imager_ssh_destination" 1 "${prefix}-cam-1"
         done
 
         zenity --question --modal \
